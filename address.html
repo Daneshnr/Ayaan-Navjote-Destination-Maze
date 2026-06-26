@@ -16,43 +16,31 @@
     .geo-tag {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 14px;
+      justify-content: center;
+      padding: 20px;
       border-radius: 8px;
       background: #f3f7f3;
       border: 1px solid #d6e6d6;
       cursor: pointer;
       text-decoration: none;
       color: #0b5a8a;
-      font-weight: 600;
       margin-top: 12px;
     }
     .geo-tag:hover { background: #e9f3ea; }
     .icon {
-      font-size: 1.25rem;
+      font-size: 6rem; /* 5x larger than default */
       line-height: 1;
-    }
-    .small {
-      display: block;
-      font-weight: 400;
-      font-size: 0.9rem;
-      color: #444;
-      margin-top: 6px;
     }
   </style>
 </head>
 <body>
   <h1>Congratulations!</h1>
   <p>You got the correct triangle.</p>
-  <p>The secret location is:</p>
+  <p>Click the destination icon to view the secret location:</p>
 
-  <!-- Clickable geo tag: opens Google Maps -->
+  <!-- Destination icon only -->
   <a id="geoLink" class="geo-tag" href="#" rel="noopener" target="_blank" aria-label="Open Seth Jeejeebhoy Dadabhoy Agiary in Google Maps">
     <span class="icon">🗺️</span>
-    <span>
-      Seth Jeejeebhoy Dadabhoy Agiary<br>
-      <span class="small">Afghan Church, Pilot Bunder Road, Colaba, Mumbai-400005</span>
-    </span>
   </a>
 
   <script>
@@ -60,7 +48,7 @@
       // The address to open in maps
       const address = 'Seth Jeejeebhoy Dadabhoy Agiary, Afghan Church, Pilot Bunder Road, Colaba, Mumbai-400005';
 
-      // Google Maps web URL (works on desktop and mobile)
+      // Google Maps web URL
       const mapsWebUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address);
 
       const link = document.getElementById('geoLink');
