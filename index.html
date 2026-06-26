@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Maze Game — Updated</title>
+  <title>Maze Game — Two Exits</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root { --accent:#0b5a8a; --bg:#fff; --wall:#000; --start:#2ecc71; --exit:#e74c3c; --player:#0074d9; }
@@ -70,8 +70,8 @@
   </style>
 </head>
 <body>
-  <h1>Maze Game — Updated</h1>
-  <p class="lead">Click or touch the green start marker (outside). Move through the maze to the red exit. Avoid black walls.</p>
+  <h1>Maze Game — Two Exits</h1>
+  <p class="lead">Start at the green marker. Navigate the maze and choose one of the two red exits — only one is correct.</p>
 
   <div class="canvas-wrap" id="wrap">
     <canvas id="mazeCanvas"></canvas>
@@ -83,7 +83,7 @@
 
     <div class="instructions" id="instructions" role="dialog" aria-modal="false">
       <strong style="color:#ffd966;display:block;margin-bottom:6px">How to play</strong>
-      <div>Click or touch the <strong style="color:var(--start)">green</strong> start marker (outside). Move your finger or mouse to guide the blue player to the <strong style="color:var(--exit)">red</strong> exit. Touching black walls ends the run.</div>
+      <div>Click or touch the <strong style="color:var(--start)">green</strong> start marker. Move through the maze to one of the two <strong style="color:var(--exit)">red</strong> exits. Only one exit is correct — the wrong exit ends the run.</div>
       <div style="text-align:right;margin-top:8px;">
         <button id="hideInstrBtn" style="background:#2ecc71;color:#fff;border:none;">Got it</button>
       </div>
@@ -128,9 +128,12 @@
     let elapsed = 0;
     let score = 0;
 
-    // Start and exit markers (logical coords)
+    // Start marker (outside top-left)
     const startMarker = { x: 30, y: 30, r: 12 };
-    const exitMarker = { x: SIZE - 30, y: SIZE - 30, r: 12 };
+
+    // Two exits (both red). Only exitA is correct.
+    const exitA = { x: SIZE - 30, y: SIZE - 30, r: 12, correct: true };   // bottom-right (correct)
+    const exitB = { x: 30, y: SIZE - 30, r: 12, correct: false };         // bottom-left (wrong)
 
     // Maze walls (logical coordinates)
     const walls = [
@@ -168,7 +171,7 @@
       { x: 240, y: 240, w: 20, h: 20 },
     ];
 
-    // Gaps for entry and exit (logical)
+    // Gaps for entry and exits (logical)
     const entryGap = { x: 12, y: 210, w: 48, h: 80 };   // left gap into interior
     const exitGap  = { x: SIZE - 60, y: 210, w: 48, h: 80 }; // right gap out
 
@@ -201,7 +204,7 @@
       ctx.clearRect(exitGap.x, exitGap.y, exitGap.w, exitGap.h);
     }
 
-    // Draw markers and player (no trail/dots)
+    // Draw markers and player (no trail)
     function drawMarkersAndPlayer() {
       // start marker (green)
       ctx.fillStyle = '#2ecc71';
@@ -209,10 +212,16 @@
       ctx.arc(startMarker.x, startMarker.y, startMarker.r, 0, Math.PI * 2);
       ctx.fill();
 
-      // exit marker (red)
+      // exit A (red)
       ctx.fillStyle = '#e74c3c';
       ctx.beginPath();
-      ctx.arc(exitMarker.x, exitMarker.y, exitMarker.r, 0, Math.PI * 2);
+      ctx.arc(exitA.x, exitA.y, exitA.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // exit B (red)
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.arc(exitB.x, exitB.y, exitB.r, 0, Math.PI * 2);
       ctx.fill();
 
       // player
@@ -289,6 +298,10 @@
       return Math.hypot(x - startMarker.x, y - startMarker.y) <= startMarker.r + 6;
     }
 
+    function reachedExit(exit) {
+      return Math.hypot(player.x - exit.x, player.y - exit.y) <= (exit.r + player.r);
+    }
+
     function startPlayingAt(pos) {
       playing = true;
       gameOver = false;
@@ -327,11 +340,41 @@
           return;
         }
 
-        // exit condition: reach exit marker
-        if (Math.hypot(player.x - exitMarker.x, player.y - exitMarker.y) <= (exitMarker.r + player.r)) {
-          updateHUD();
-          window.location.href = 'address.html';
-          return;
+        // check exits
+        if (reachedExit(exitA)) {
+          if (exitA.correct) {
+            updateHUD();
+            window.location.href = 'address.html';
+            return;
+          } else {
+            messageEl.textContent = 'Wrong exit. That one is incorrect. Restart to try again.';
+            gameOver = true;
+            playing = false;
+            restartBtn.hidden = false;
+            cancelAnimationFrame(animId);
+            animId = null;
+            redraw();
+            updateHUD();
+            return;
+          }
+        }
+
+        if (reachedExit(exitB)) {
+          if (exitB.correct) {
+            updateHUD();
+            window.location.href = 'address.html';
+            return;
+          } else {
+            messageEl.textContent = 'Wrong exit. That one is incorrect. Restart to try again.';
+            gameOver = true;
+            playing = false;
+            restartBtn.hidden = false;
+            cancelAnimationFrame(animId);
+            animId = null;
+            redraw();
+            updateHUD();
+            return;
+          }
         }
       }
 
