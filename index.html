@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Maze Game — New Complex Maze</title>
+  <title>Maze Game — Updated</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root { --accent:#0b5a8a; --bg:#fff; --wall:#000; --start:#2ecc71; --exit:#e74c3c; --player:#0074d9; }
@@ -15,10 +15,9 @@
     h1 { margin: 0 0 6px 0; color: #1a8a1a; }
     p.lead { margin: 6px 0 14px 0; color: #444; }
 
-    .canvas-wrap { position: relative; display: inline-block; }
-    canvas { display: block; border: 1px solid #222; background: var(--bg); touch-action: none; }
+    .canvas-wrap { position: relative; display: inline-block; width: 100%; max-width: 600px; }
+    canvas { display: block; border: 1px solid #222; background: var(--bg); width: 100%; height: auto; touch-action: none; }
 
-    /* HUD top-right so it doesn't cover start */
     .hud {
       position: absolute;
       right: 8px;
@@ -71,12 +70,11 @@
   </style>
 </head>
 <body>
-  <h1>Maze Game — New Maze</h1>
-  <p class="lead">Start outside at the green marker, go inside the maze, then return to the red exit. Avoid black walls.</p>
+  <h1>Maze Game — Updated</h1>
+  <p class="lead">Click or touch the green start marker (outside). Move through the maze to the red exit. Avoid black walls.</p>
 
   <div class="canvas-wrap" id="wrap">
-    <!-- Canvas size chosen for clarity and responsiveness -->
-    <canvas id="mazeCanvas" width="500" height="500"></canvas>
+    <canvas id="mazeCanvas"></canvas>
 
     <div class="hud" id="hud" aria-hidden="false">
       <div class="line"><span class="label">Time</span><span id="timer">0.0s</span></div>
@@ -85,7 +83,7 @@
 
     <div class="instructions" id="instructions" role="dialog" aria-modal="false">
       <strong style="color:#ffd966;display:block;margin-bottom:6px">How to play</strong>
-      <div>Click or touch the <strong style="color:var(--start)">green</strong> start marker (outside). Move into the maze, navigate the interior, then return to the <strong style="color:var(--exit)">red</strong> exit outside. Touching black walls ends the run.</div>
+      <div>Click or touch the <strong style="color:var(--start)">green</strong> start marker (outside). Move your finger or mouse to guide the blue player to the <strong style="color:var(--exit)">red</strong> exit. Touching black walls ends the run.</div>
       <div style="text-align:right;margin-top:8px;">
         <button id="hideInstrBtn" style="background:#2ecc71;color:#fff;border:none;">Got it</button>
       </div>
@@ -100,334 +98,310 @@
   <div id="message" role="status" aria-live="polite"></div>
 
   <script>
-    (function () {
-      const canvas = document.getElementById('mazeCanvas');
-      const ctx = canvas.getContext('2d');
-      const timerEl = document.getElementById('timer');
-      const scoreEl = document.getElementById('score');
-      const messageEl = document.getElementById('message');
-      const restartBtn = document.getElementById('restartBtn');
-      const showInstrBtn = document.getElementById('showInstrBtn');
-      const instructionsEl = document.getElementById('instructions');
-      const hideInstrBtn = document.getElementById('hideInstrBtn');
+  (function () {
+    // Responsive canvas setup
+    const canvas = document.getElementById('mazeCanvas');
+    const ctx = canvas.getContext('2d');
+    const wrap = document.getElementById('wrap');
+    const timerEl = document.getElementById('timer');
+    const scoreEl = document.getElementById('score');
+    const messageEl = document.getElementById('message');
+    const restartBtn = document.getElementById('restartBtn');
+    const showInstrBtn = document.getElementById('showInstrBtn');
+    const instructionsEl = document.getElementById('instructions');
+    const hideInstrBtn = document.getElementById('hideInstrBtn');
 
-      const W = canvas.width, H = canvas.height;
-      const scale = 1; // canvas already logical size
+    // Logical maze size
+    const SIZE = 500;
 
-      // Game state
-      let playing = false;
-      let gameOver = false;
-      let animId = null;
+    let DPR = window.devicePixelRatio || 1;
+    let playing = false;
+    let gameOver = false;
+    let animId = null;
 
-      // Player
-      const player = { x: 30, y: 30, r: 8, visitedInterior: false };
-      const target = { x: player.x, y: player.y };
+    // Player and target (logical coordinates)
+    const player = { x: 30, y: 30, r: 8 };
+    const target = { x: player.x, y: player.y };
 
-      // Trail dots (keep dots as requested)
-      const trail = [];
-      const TRAIL_MAX = 300;
+    // Timer & score
+    let startTime = null;
+    let elapsed = 0;
+    let score = 0;
 
-      // Timer & score
-      let startTime = null;
-      let elapsed = 0;
-      let score = 0;
+    // Start and exit markers (logical coords)
+    const startMarker = { x: 30, y: 30, r: 12 };
+    const exitMarker = { x: SIZE - 30, y: SIZE - 30, r: 12 };
 
-      // Start (outside top-left) and Exit (outside bottom-right)
-      const startMarker = { x: 30, y: 30, r: 12 };
-      const exitMarker = { x: W - 30, y: H - 30, r: 12 };
+    // Maze walls (logical coordinates)
+    const walls = [
+      // outer border
+      { x: 0, y: 0, w: SIZE, h: 12 },
+      { x: 0, y: 0, w: 12, h: SIZE },
+      { x: SIZE - 12, y: 0, w: 12, h: SIZE },
+      { x: 0, y: SIZE - 12, w: SIZE, h: 12 },
 
-      // Define walls for a clear, solvable but interesting maze.
-      // We'll use an array of rectangles (x,y,w,h) in canvas coordinates.
-      const walls = [
-        // outer border (thick)
-        { x: 0, y: 0, w: W, h: 12 },
-        { x: 0, y: 0, w: 12, h: H },
-        { x: W - 12, y: 0, w: 12, h: H },
-        { x: 0, y: H - 12, w: W, h: 12 },
+      // inner frame
+      { x: 60, y: 60, w: 380, h: 12 },
+      { x: 60, y: 60, w: 12, h: 380 },
+      { x: 428, y: 60, w: 12, h: 380 },
+      { x: 60, y: 428, w: 380, h: 12 },
 
-        // large inner frame (creates a ring corridor)
-        { x: 60, y: 60, w: 380, h: 12 },
-        { x: 60, y: 60, w: 12, h: 380 },
-        { x: 428, y: 60, w: 12, h: 380 },
-        { x: 60, y: 428, w: 380, h: 12 },
+      // corridors
+      { x: 120, y: 120, w: 260, h: 12 },
+      { x: 120, y: 120, w: 12, h: 260 },
+      { x: 368, y: 120, w: 12, h: 260 },
+      { x: 120, y: 368, w: 260, h: 12 },
 
-        // inner maze corridors (a balanced pattern)
-        { x: 120, y: 120, w: 260, h: 12 },
-        { x: 120, y: 120, w: 12, h: 260 },
-        { x: 368, y: 120, w: 12, h: 260 },
-        { x: 120, y: 368, w: 260, h: 12 },
+      // cross passages
+      { x: 180, y: 120, w: 12, h: 120 },
+      { x: 240, y: 180, w: 120, h: 12 },
+      { x: 300, y: 240, w: 12, h: 120 },
+      { x: 180, y: 300, w: 120, h: 12 },
 
-        // cross passages and blockers to create choices
-        { x: 180, y: 120, w: 12, h: 120 },
-        { x: 240, y: 180, w: 120, h: 12 },
-        { x: 300, y: 240, w: 12, h: 120 },
-        { x: 180, y: 300, w: 120, h: 12 },
+      // small obstacles
+      { x: 150, y: 60, w: 12, h: 60 },
+      { x: 360, y: 360, w: 12, h: 60 },
+      { x: 220, y: 300, w: 60, h: 12 },
+      { x: 300, y: 180, w: 12, h: 60 },
 
-        // small obstacles
-        { x: 150, y: 60, w: 12, h: 60 },
-        { x: 360, y: 360, w: 12, h: 60 },
-        { x: 220, y: 300, w: 60, h: 12 },
-        { x: 300, y: 180, w: 12, h: 60 },
+      // center island
+      { x: 240, y: 240, w: 20, h: 20 },
+    ];
 
-        // create a small island in the center
-        { x: 240, y: 240, w: 20, h: 20 },
-      ];
+    // Gaps for entry and exit (logical)
+    const entryGap = { x: 12, y: 210, w: 48, h: 80 };   // left gap into interior
+    const exitGap  = { x: SIZE - 60, y: 210, w: 48, h: 80 }; // right gap out
 
-      // Gaps: left entry gap and right exit gap so player can go inside and then out
-      const entryGap = { x: 12, y: 220, w: 48, h: 60 };   // left side gap into interior
-      const exitGap  = { x: W - 60, y: 220, w: 48, h: 60 }; // right side gap out of interior
+    // Resize canvas to fit wrapper width and keep square aspect ratio
+    function resizeCanvas() {
+      DPR = window.devicePixelRatio || 1;
+      const displayWidth = wrap.clientWidth;
+      canvas.style.width = displayWidth + 'px';
+      canvas.style.height = displayWidth + 'px';
+      canvas.width = Math.round(displayWidth * DPR);
+      canvas.height = Math.round(displayWidth * DPR);
+      const scale = canvas.width / SIZE;
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      redraw();
+    }
 
-      // Draw maze base
-      function drawMazeBase() {
-        ctx.clearRect(0, 0, W, H);
-        // background
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, W, H);
+    // Draw maze base (logical coords)
+    function drawMazeBase() {
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, SIZE, SIZE);
 
-        // walls
-        ctx.fillStyle = '#000000';
-        for (const w of walls) {
-          ctx.fillRect(w.x, w.y, w.w, w.h);
-        }
-
-        // carve gaps
-        ctx.clearRect(entryGap.x, entryGap.y, entryGap.w, entryGap.h);
-        ctx.clearRect(exitGap.x, exitGap.y, exitGap.w, exitGap.h);
+      ctx.fillStyle = '#000000';
+      for (const w of walls) {
+        ctx.fillRect(w.x, w.y, w.w, w.h);
       }
 
-      // Draw markers, trail and player
-      function drawMarkersAndPlayer() {
-        // start marker (green)
-        ctx.fillStyle = '#2ecc71';
+      // carve gaps
+      ctx.clearRect(entryGap.x, entryGap.y, entryGap.w, entryGap.h);
+      ctx.clearRect(exitGap.x, exitGap.y, exitGap.w, exitGap.h);
+    }
+
+    // Draw markers and player (no trail/dots)
+    function drawMarkersAndPlayer() {
+      // start marker (green)
+      ctx.fillStyle = '#2ecc71';
+      ctx.beginPath();
+      ctx.arc(startMarker.x, startMarker.y, startMarker.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // exit marker (red)
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.arc(exitMarker.x, exitMarker.y, exitMarker.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // player
+      if (playing) {
+        ctx.fillStyle = '#0074d9';
         ctx.beginPath();
-        ctx.arc(startMarker.x, startMarker.y, startMarker.r, 0, Math.PI * 2);
+        ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
         ctx.fill();
-
-        // exit marker (red)
-        ctx.fillStyle = '#e74c3c';
-        ctx.beginPath();
-        ctx.arc(exitMarker.x, exitMarker.y, exitMarker.r, 0, Math.PI * 2);
-        ctx.fill();
-
-        // trail dots
-        ctx.fillStyle = 'rgba(0,102,204,0.9)';
-        for (let i = 0; i < trail.length; i++) {
-          const p = trail[i];
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, Math.max(1, Math.round(player.r / 4)), 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        // player
-        if (playing) {
-          ctx.fillStyle = '#0074d9';
-          ctx.beginPath();
-          ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
-          ctx.fill();
-        }
       }
+    }
 
-      // Full redraw
-      function redraw() {
-        drawMazeBase();
-        drawMarkersAndPlayer();
-      }
+    function redraw() {
+      drawMazeBase();
+      drawMarkersAndPlayer();
+    }
 
-      // Collision detection: sample a small area around center
-      function isTouchingWall(cx, cy, sampleSize = 6) {
-        const half = Math.floor(sampleSize / 2);
-        const sx = Math.max(0, Math.floor(cx) - half);
-        const sy = Math.max(0, Math.floor(cy) - half);
-        const w = Math.min(sampleSize, W - sx);
-        const h = Math.min(sampleSize, H - sy);
-        if (w <= 0 || h <= 0) return false;
+    // Collision detection: sample small area around center (logical units)
+    function isTouchingWall(cx, cy, sampleSize = 8) {
+      const half = Math.floor(sampleSize / 2);
+      const backingScale = canvas.width / SIZE;
+      const sx = Math.max(0, Math.floor((cx - half) * backingScale));
+      const sy = Math.max(0, Math.floor((cy - half) * backingScale));
+      const w = Math.min(Math.ceil(sampleSize * backingScale), canvas.width - sx);
+      const h = Math.min(Math.ceil(sampleSize * backingScale), canvas.height - sy);
+      if (w <= 0 || h <= 0) return false;
+      try {
+        // getImageData in logical coords by dividing by backingScale
+        const data = ctx.getImageData(sx / backingScale, sy / backingScale, w / backingScale, h / backingScale).data;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+          if (r === 0 && g === 0 && b === 0 && a !== 0) return true;
+        }
+      } catch (err) {
         try {
-          const data = ctx.getImageData(sx, sy, w, h).data;
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
-            if (r === 0 && g === 0 && b === 0 && a !== 0) return true;
-          }
-        } catch (err) {
+          const px = ctx.getImageData(Math.max(0, Math.floor(cx)), Math.max(0, Math.floor(cy)), 1, 1).data;
+          return px[0] === 0 && px[1] === 0 && px[2] === 0;
+        } catch (e) {
           return false;
         }
-        return false;
       }
+      return false;
+    }
 
-      // Smoothly move player toward target
-      function updatePlayer() {
-        const speed = 0.22; // interpolation factor
-        const prevX = player.x, prevY = player.y;
-        player.x += (target.x - player.x) * speed;
-        player.y += (target.y - player.y) * speed;
+    // Smoothly move player toward target (logical coords)
+    function updatePlayer() {
+      const speed = 0.22;
+      const prevX = player.x, prevY = player.y;
+      player.x += (target.x - player.x) * speed;
+      player.y += (target.y - player.y) * speed;
+      const dx = player.x - prevX, dy = player.y - prevY;
+      score += Math.sqrt(dx*dx + dy*dy);
+    }
 
-        // add to trail
-        trail.push({ x: player.x, y: player.y });
-        if (trail.length > TRAIL_MAX) trail.shift();
-
-        // accumulate distance as score
-        const dx = player.x - prevX, dy = player.y - prevY;
-        score += Math.sqrt(dx*dx + dy*dy);
+    // HUD update
+    function updateHUD() {
+      if (playing && startTime !== null) {
+        elapsed = (Date.now() - startTime) / 1000;
       }
+      timerEl.textContent = elapsed.toFixed(1) + 's';
+      scoreEl.textContent = Math.round(score);
+    }
 
-      // HUD update
-      function updateHUD() {
-        if (playing && startTime !== null) {
-          elapsed = (Date.now() - startTime) / 1000;
-        }
-        timerEl.textContent = elapsed.toFixed(1) + 's';
-        scoreEl.textContent = Math.round(score);
-      }
+    // Helpers
+    function clientToLogical(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const cssX = clientX - rect.left;
+      const cssY = clientY - rect.top;
+      const logicalX = (cssX / rect.width) * SIZE;
+      const logicalY = (cssY / rect.height) * SIZE;
+      return { x: logicalX, y: logicalY };
+    }
 
-      // Helpers to detect interior and gaps
-      function isInsideInterior(px, py) {
-        // interior defined as inside the inner frame (between 60 and 440)
-        return px > 60 && px < 440 && py > 60 && py < 440;
-      }
-      function inEntryGap(px, py) {
-        return px >= entryGap.x && px <= entryGap.x + entryGap.w &&
-               py >= entryGap.y && py <= entryGap.y + entryGap.h;
-      }
-      function inExitGap(px, py) {
-        return px >= exitGap.x && px <= exitGap.x + exitGap.w &&
-               py >= exitGap.y && py <= exitGap.y + exitGap.h;
-      }
+    function pointerOnStart(x, y) {
+      return Math.hypot(x - startMarker.x, y - startMarker.y) <= startMarker.r + 6;
+    }
 
-      // Game loop
-      function loop() {
-        if (gameOver) {
+    function startPlayingAt(pos) {
+      playing = true;
+      gameOver = false;
+      messageEl.textContent = '';
+      restartBtn.hidden = true;
+      player.x = startMarker.x;
+      player.y = startMarker.y;
+      target.x = pos.x;
+      target.y = pos.y;
+      score = 0;
+      elapsed = 0;
+      startTime = Date.now();
+      if (!animId) loop();
+    }
+
+    // Game loop
+    function loop() {
+      if (gameOver) {
+        cancelAnimationFrame(animId);
+        animId = null;
+        return;
+      }
+      if (playing) {
+        updatePlayer();
+
+        // collision check
+        if (isTouchingWall(player.x, player.y, Math.max(8, Math.round(player.r)))) {
+          messageEl.textContent = 'Oops! You hit a wall. Restart to try again.';
+          gameOver = true;
+          playing = false;
+          restartBtn.hidden = false;
           cancelAnimationFrame(animId);
           animId = null;
+          redraw();
+          updateHUD();
           return;
         }
-        if (playing) {
-          updatePlayer();
 
-          // collision check
-          if (isTouchingWall(player.x, player.y, Math.max(6, Math.round(player.r)))) {
-            messageEl.textContent = 'Oops! You hit a wall. Restart to try again.';
-            gameOver = true;
-            playing = false;
-            restartBtn.hidden = false;
-            cancelAnimationFrame(animId);
-            animId = null;
-            redraw();
-            updateHUD();
-            return;
-          }
-
-          // mark visited interior when entering
-          if (!player.visitedInterior && isInsideInterior(player.x, player.y)) {
-            player.visitedInterior = true;
-          }
-
-          // exit condition: must have visited interior and then reach exit marker (outside)
-          if (player.visitedInterior && Math.hypot(player.x - exitMarker.x, player.y - exitMarker.y) <= (exitMarker.r + player.r)) {
-            updateHUD();
-            // reached exit: redirect
-            window.location.href = 'address.html';
-            return;
-          }
+        // exit condition: reach exit marker
+        if (Math.hypot(player.x - exitMarker.x, player.y - exitMarker.y) <= (exitMarker.r + player.r)) {
+          updateHUD();
+          window.location.href = 'address.html';
+          return;
         }
-
-        redraw();
-        updateHUD();
-        animId = requestAnimationFrame(loop);
       }
 
-      // Convert client coords to canvas coords
-      function clientToCanvas(clientX, clientY) {
-        const rect = canvas.getBoundingClientRect();
-        const x = (clientX - rect.left) * (canvas.width / rect.width);
-        const y = (clientY - rect.top) * (canvas.height / rect.height);
-        return { x, y };
-      }
+      redraw();
+      updateHUD();
+      animId = requestAnimationFrame(loop);
+    }
 
-      // Start playing only if pointer starts on the start marker
-      function pointerOnStart(x, y) {
-        return Math.hypot(x - startMarker.x, y - startMarker.y) <= startMarker.r + 6;
-      }
+    // Mouse events
+    canvas.addEventListener('mousedown', (e) => {
+      if (gameOver) return;
+      const pos = clientToLogical(e.clientX, e.clientY);
+      if (pointerOnStart(pos.x, pos.y)) startPlayingAt(pos);
+    });
 
-      function startPlayingAt(pos) {
-        playing = true;
-        gameOver = false;
-        messageEl.textContent = '';
-        restartBtn.hidden = true;
-        player.x = startMarker.x;
-        player.y = startMarker.y;
-        player.visitedInterior = false;
-        target.x = pos.x;
-        target.y = pos.y;
-        trail.length = 0;
-        score = 0;
-        elapsed = 0;
-        startTime = Date.now();
-        if (!animId) loop();
-      }
+    canvas.addEventListener('mousemove', (e) => {
+      if (!playing || gameOver) return;
+      const pos = clientToLogical(e.clientX, e.clientY);
+      target.x = pos.x;
+      target.y = pos.y;
+    });
 
-      // Mouse events
-      canvas.addEventListener('mousedown', (e) => {
-        if (gameOver) return;
-        const pos = clientToCanvas(e.clientX, e.clientY);
-        if (pointerOnStart(pos.x, pos.y)) startPlayingAt(pos);
-      });
+    // Touch events (prevent default only while interacting)
+    canvas.addEventListener('touchstart', (e) => {
+      if (gameOver) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      const pos = clientToLogical(t.clientX, t.clientY);
+      if (pointerOnStart(pos.x, pos.y)) startPlayingAt(pos);
+    }, { passive: false });
 
-      canvas.addEventListener('mousemove', (e) => {
-        if (!playing || gameOver) return;
-        const pos = clientToCanvas(e.clientX, e.clientY);
-        target.x = pos.x;
-        target.y = pos.y;
-      });
+    canvas.addEventListener('touchmove', (e) => {
+      if (!playing || gameOver) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      const pos = clientToLogical(t.clientX, t.clientY);
+      target.x = pos.x;
+      target.y = pos.y;
+    }, { passive: false });
 
-      window.addEventListener('mouseup', () => {
-        // no special stop; player remains visible
-      });
+    // Restart
+    restartBtn.addEventListener('click', () => {
+      gameOver = false;
+      playing = false;
+      messageEl.textContent = '';
+      restartBtn.hidden = true;
+      score = 0;
+      elapsed = 0;
+      startTime = null;
+      player.x = startMarker.x;
+      player.y = startMarker.y;
+      target.x = player.x;
+      target.y = player.y;
+      redraw();
+      updateHUD();
+    });
 
-      // Touch events (prevent default only when interacting)
-      canvas.addEventListener('touchstart', (e) => {
-        if (gameOver) return;
-        e.preventDefault();
-        const t = e.touches[0];
-        const pos = clientToCanvas(t.clientX, t.clientY);
-        if (pointerOnStart(pos.x, pos.y)) startPlayingAt(pos);
-      }, { passive: false });
+    // Instructions controls
+    showInstrBtn.addEventListener('click', () => instructionsEl.style.display = 'block');
+    hideInstrBtn.addEventListener('click', () => instructionsEl.style.display = 'none');
 
-      canvas.addEventListener('touchmove', (e) => {
-        if (!playing || gameOver) return;
-        e.preventDefault();
-        const t = e.touches[0];
-        const pos = clientToCanvas(t.clientX, t.clientY);
-        target.x = pos.x;
-        target.y = pos.y;
-      }, { passive: false });
+    // Resize handling
+    window.addEventListener('resize', () => {
+      clearTimeout(window._mazeResizeTimer);
+      window._mazeResizeTimer = setTimeout(resizeCanvas, 80);
+    });
 
-      canvas.addEventListener('touchend', () => {
-        // nothing special
-      });
-
-      // Restart
-      restartBtn.addEventListener('click', () => {
-        gameOver = false;
-        playing = false;
-        messageEl.textContent = '';
-        restartBtn.hidden = true;
-        trail.length = 0;
-        score = 0;
-        elapsed = 0;
-        startTime = null;
-        player.x = startMarker.x;
-        player.y = startMarker.y;
-        player.visitedInterior = false;
-        target.x = player.x;
-        target.y = player.y;
-        redraw();
-        updateHUD();
-      });
-
-      // Instructions controls
-      showInstrBtn.addEventListener('click', () => instructionsEl.style.display = 'block');
-      hideInstrBtn.addEventListener('click', () => instructionsEl.style.display = 'none');
-
-      // Initial draw and show instructions
+    // Initial setup
+    function init() {
+      resizeCanvas();
       player.x = startMarker.x;
       player.y = startMarker.y;
       target.x = player.x;
@@ -435,7 +409,10 @@
       redraw();
       updateHUD();
       instructionsEl.style.display = 'block';
-    })();
+    }
+
+    init();
+  })();
   </script>
 </body>
 </html>
