@@ -30,11 +30,12 @@
       background: #fff;
     }
 
-    /* Overlay panel (top-left) for timer/score */
+    /* HUD moved to top-right so it doesn't cover the entrance */
     .hud {
       position: absolute;
-      left: 8px;
+      right: 8px;
       top: 8px;
+      left: auto;
       background: rgba(255,255,255,0.92);
       border-radius: 8px;
       padding: 8px 10px;
@@ -43,6 +44,7 @@
       color: #0b5a8a;
       text-align: left;
       min-width: 120px;
+      z-index: 10;
     }
     .hud .line { font-size: 0.95rem; margin: 2px 0; }
     .hud .label { font-weight: 700; margin-right: 6px; color: #0b5a8a; }
@@ -60,7 +62,8 @@
       max-width: 86%;
       text-align: left;
       line-height: 1.3;
-      display: none; /* shown when not playing */
+      display: none;
+      z-index: 20;
     }
     .instructions h2 { margin: 0 0 6px 0; font-size: 1.05rem; color: #ffd966; }
     .instructions p { margin: 6px 0; font-size: 0.95rem; }
@@ -96,7 +99,7 @@
   <div class="canvas-wrap">
     <canvas id="mazeCanvas" width="400" height="400"></canvas>
 
-    <!-- HUD: timer and score -->
+    <!-- HUD: timer and score (moved to top-right) -->
     <div id="hud" class="hud" aria-hidden="false">
       <div class="line"><span class="label">Time</span><span id="timer">0.0s</span></div>
       <div class="line"><span class="label">Score</span><span id="score">0</span></div>
@@ -130,7 +133,6 @@
     const hideInstrBtn = document.getElementById("hideInstrBtn");
     const timerEl = document.getElementById("timer");
     const scoreEl = document.getElementById("score");
-    const hud = document.getElementById("hud");
 
     // scale factor (canvas is 400x400 logical)
     const scale = canvas.width / 400;
@@ -146,7 +148,6 @@
     let startTime = null;
     let elapsed = 0; // seconds
     let score = 0; // accumulated distance (pixels)
-    let lastPlayerPos = { x: player.x, y: player.y };
 
     // Entrance and exit rectangles
     const entranceRect = { x: 0, y: 0, w: 40 * scale, h: 40 * scale };
@@ -258,7 +259,6 @@
         elapsed = (Date.now() - startTime) / 1000;
       }
       timerEl.textContent = elapsed.toFixed(1) + "s";
-      // show score as rounded integer
       scoreEl.textContent = Math.round(score);
     }
 
@@ -288,7 +288,6 @@
         // check exit
         if (player.x > exitRect.x && player.x < exitRect.x + exitRect.w &&
             player.y > exitRect.y && player.y < exitRect.y + exitRect.h) {
-          // reached exit: stop timer and redirect
           updateHUD();
           window.location.href = "address.html";
           return;
@@ -319,13 +318,10 @@
       gameOver = false;
       message.textContent = "";
       restartBtn.hidden = true;
-      // place player at entrance center
       player.x = entranceRect.x + entranceRect.w/2;
       player.y = entranceRect.y + entranceRect.h/2;
       target.x = pos.x;
       target.y = pos.y;
-      lastPlayerPos.x = player.x;
-      lastPlayerPos.y = player.y;
       score = 0;
       elapsed = 0;
       startTime = Date.now();
@@ -348,14 +344,9 @@
       target.y = pos.y;
     });
 
-    window.addEventListener("mouseup", () => {
-      // keep player visible; no special stop
-    });
-
     // Touch events
     canvas.addEventListener("touchstart", (e) => {
       if (gameOver) return;
-      // prevent default only when interacting with canvas to avoid page refresh while drawing
       e.preventDefault();
       const touch = e.touches[0];
       const pos = clientToCanvas(touch.clientX, touch.clientY);
@@ -372,10 +363,6 @@
       target.x = pos.x;
       target.y = pos.y;
     }, { passive: false });
-
-    canvas.addEventListener("touchend", (e) => {
-      // no special action
-    });
 
     // Restart button
     restartBtn.addEventListener("click", () => {
