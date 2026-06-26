@@ -2,19 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Maze Game</title>
+  <title>Maze Game — Complex</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
       text-align: center;
       font-family: Arial, sans-serif;
-      margin: 24px;
+      margin: 20px;
       color: #222;
     }
 
     h1 { margin: 0 0 8px 0; color: #1a8a1a; }
 
-    /* Canvas container to position overlays */
     .canvas-wrap {
       position: relative;
       display: inline-block;
@@ -25,18 +24,18 @@
       border: 1px solid #222;
       display: block;
       width: 100%;
-      max-width: 600px;
+      max-width: 700px;
       height: auto;
       background: #fff;
+      touch-action: none; /* prevent page gestures while interacting */
     }
 
-    /* HUD moved to top-right so it doesn't cover the entrance */
+    /* HUD top-right */
     .hud {
       position: absolute;
       right: 8px;
       top: 8px;
-      left: auto;
-      background: rgba(255,255,255,0.92);
+      background: rgba(255,255,255,0.95);
       border-radius: 8px;
       padding: 8px 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.12);
@@ -49,13 +48,12 @@
     .hud .line { font-size: 0.95rem; margin: 2px 0; }
     .hud .label { font-weight: 700; margin-right: 6px; color: #0b5a8a; }
 
-    /* Instructions overlay (centered, semi-transparent) */
     .instructions {
       position: absolute;
       left: 50%;
       top: 50%;
       transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.7);
+      background: rgba(0,0,0,0.75);
       color: #fff;
       padding: 14px 18px;
       border-radius: 10px;
@@ -69,7 +67,6 @@
     .instructions p { margin: 6px 0; font-size: 0.95rem; }
     .instructions .hint { font-size: 0.9rem; color: #e6e6e6; margin-top: 8px; }
 
-    /* Small footer controls */
     #controls {
       margin-top: 12px;
     }
@@ -85,31 +82,35 @@
     }
     #restartBtn[hidden] { display: none; }
 
-    /* Responsive tweaks */
-    @media (max-width: 420px) {
+    #message {
+      margin-top: 10px;
+      font-weight: bold;
+      color: red;
+      min-height: 1.2em;
+    }
+
+    @media (max-width: 480px) {
       .hud { min-width: 100px; padding: 6px 8px; }
       .instructions { padding: 12px; }
     }
   </style>
 </head>
 <body>
-  <h1>Maze Game</h1>
-  <p>Start by touching or clicking the green start marker. Move to the red exit without touching walls.</p>
+  <h1>Maze Game — Complex</h1>
+  <p>Start from the green marker (outside the main maze), go inside, then return to the red exit (outside).</p>
 
   <div class="canvas-wrap">
-    <canvas id="mazeCanvas" width="400" height="400"></canvas>
+    <canvas id="mazeCanvas" width="600" height="600"></canvas>
 
-    <!-- HUD: timer and score (moved to top-right) -->
     <div id="hud" class="hud" aria-hidden="false">
       <div class="line"><span class="label">Time</span><span id="timer">0.0s</span></div>
       <div class="line"><span class="label">Score</span><span id="score">0</span></div>
     </div>
 
-    <!-- Centered instructions overlay -->
     <div id="instructions" class="instructions" role="dialog" aria-modal="false">
       <h2>How to play</h2>
-      <p>Touch or click the <strong>green</strong> start marker to begin. Move your finger or mouse to guide the blue player to the <strong>red</strong> exit. Avoid touching black walls.</p>
-      <p class="hint">Tip: Start inside the green area. The timer and score update while you move.</p>
+      <p>Touch or click the <strong>green</strong> start marker (outside the maze) to begin. Move into the maze, navigate through the interior, then return to the <strong>red</strong> exit outside the maze. Avoid touching black walls.</p>
+      <p class="hint">Tip: The blue player follows your pointer smoothly. A trail of dots shows your path. Timer and score update while you move.</p>
       <div style="text-align:right; margin-top:8px;">
         <button id="hideInstrBtn" style="padding:6px 10px;border-radius:6px;border:none;background:#2ecc71;color:#fff;font-weight:700;cursor:pointer;">Got it</button>
       </div>
@@ -134,77 +135,131 @@
     const timerEl = document.getElementById("timer");
     const scoreEl = document.getElementById("score");
 
-    // scale factor (canvas is 400x400 logical)
-    const scale = canvas.width / 400;
+    // Logical canvas size (we set canvas width/height to 600)
+    const CANVAS_SIZE = 600;
+    const scale = canvas.width / CANVAS_SIZE;
 
     // Game state
     let playing = false;
     let gameOver = false;
-    let player = { x: 20 * scale, y: 20 * scale, r: 8 * scale };
+    let player = { x: 30 * scale, y: 30 * scale, r: 10 * scale };
     let target = { x: player.x, y: player.y };
     let animId = null;
 
+    // Trail (dots) - keep dots as requested
+    const trail = [];
+    const TRAIL_MAX = 200;
+
     // Timer & score
     let startTime = null;
-    let elapsed = 0; // seconds
-    let score = 0; // accumulated distance (pixels)
+    let elapsed = 0;
+    let score = 0;
 
-    // Entrance and exit rectangles
-    const entranceRect = { x: 0, y: 0, w: 40 * scale, h: 40 * scale };
-    const exitRect = { x: 360 * scale, y: 360 * scale, w: 40 * scale, h: 40 * scale };
+    // Define entrance (start outside top-left) and interior entry/exit
+    // We'll place the start marker slightly outside the main inner maze area but inside canvas edge
+    const startMarker = { x: 30 * scale, y: 30 * scale, r: 12 * scale }; // outside-ish
+    const exitMarker = { x: (CANVAS_SIZE - 30) * scale, y: (CANVAS_SIZE - 30) * scale, r: 12 * scale }; // outside-ish
+
+    // Define a more complex maze layout (array of rectangles for walls)
+    // Coordinates are in logical 600x600 units; multiply by scale when drawing
+    const walls = [
+      // outer thick border (leave small gaps for start/exit outside markers)
+      { x: 0, y: 0, w: 600, h: 12 }, // top
+      { x: 0, y: 0, w: 12, h: 600 }, // left
+      { x: 588, y: 0, w: 12, h: 600 }, // right
+      { x: 0, y: 588, w: 600, h: 12 }, // bottom
+
+      // inner complex corridors (a more challenging pattern)
+      { x: 60, y: 60, w: 480, h: 12 },
+      { x: 60, y: 60, w: 12, h: 480 },
+      { x: 528, y: 60, w: 12, h: 480 },
+      { x: 60, y: 528, w: 480, h: 12 },
+
+      // concentric rings with openings
+      { x: 120, y: 120, w: 360, h: 12 },
+      { x: 120, y: 120, w: 12, h: 360 },
+      { x: 468, y: 120, w: 12, h: 360 },
+      { x: 120, y: 468, w: 360, h: 12 },
+
+      { x: 180, y: 180, w: 240, h: 12 },
+      { x: 180, y: 180, w: 12, h: 240 },
+      { x: 408, y: 180, w: 12, h: 240 },
+      { x: 180, y: 408, w: 240, h: 12 },
+
+      // some internal blockers to create twists
+      { x: 240, y: 120, w: 12, h: 120 },
+      { x: 360, y: 360, w: 12, h: 120 },
+      { x: 300, y: 240, w: 120, h: 12 },
+      { x: 180, y: 300, w: 120, h: 12 },
+      { x: 120, y: 240, w: 60, h: 12 },
+      { x: 420, y: 300, w: 60, h: 12 },
+
+      // diagonal-ish corridors (made from small blocks)
+      { x: 240, y: 60, w: 12, h: 60 },
+      { x: 300, y: 60, w: 12, h: 60 },
+      { x: 360, y: 60, w: 12, h: 60 },
+
+      // create an inner island
+      { x: 260, y: 260, w: 80, h: 12 },
+      { x: 260, y: 260, w: 12, h: 80 },
+      { x: 328, y: 260, w: 12, h: 80 },
+      { x: 260, y: 328, w: 80, h: 12 },
+
+      // small blockers to force pathing
+      { x: 150, y: 420, w: 12, h: 60 },
+      { x: 438, y: 150, w: 12, h: 60 },
+      { x: 330, y: 120, w: 12, h: 60 },
+    ];
+
+    // Clear areas for start and exit so they are "outside" the main maze walls
+    // We'll also create small corridors: an entry gap into the maze interior and an exit gap out
+    const entryGap = { x: 12, y: 270, w: 48, h: 60 }; // left side gap into maze
+    const exitGap = { x: 540, y: 270, w: 48, h: 60 }; // right side gap out of maze
 
     // Draw maze base
     function drawMazeBase() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "white";
+      // background
+      ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.fillStyle = "black";
-      // Outer border
-      ctx.fillRect(0, 0, 400 * scale, 10 * scale);
-      ctx.fillRect(0, 0, 10 * scale, 400 * scale);
-      ctx.fillRect(390 * scale, 0, 10 * scale, 400 * scale);
-      ctx.fillRect(0, 390 * scale, 400 * scale, 10 * scale);
+      // draw walls
+      ctx.fillStyle = "#000000";
+      walls.forEach(w => {
+        ctx.fillRect(w.x * scale, w.y * scale, w.w * scale, w.h * scale);
+      });
 
-      // Maze layout (horizontal)
-      ctx.fillRect(40 * scale, 40 * scale, 320 * scale, 10 * scale);
-      ctx.fillRect(40 * scale, 80 * scale, 280 * scale, 10 * scale);
-      ctx.fillRect(80 * scale, 120 * scale, 280 * scale, 10 * scale);
-      ctx.fillRect(40 * scale, 160 * scale, 280 * scale, 10 * scale);
-      ctx.fillRect(80 * scale, 200 * scale, 280 * scale, 10 * scale);
-      ctx.fillRect(40 * scale, 240 * scale, 280 * scale, 10 * scale);
-      ctx.fillRect(80 * scale, 280 * scale, 280 * scale, 10 * scale);
-      ctx.fillRect(40 * scale, 320 * scale, 320 * scale, 10 * scale);
+      // carve entry and exit gaps (clearRect)
+      ctx.clearRect(entryGap.x * scale, entryGap.y * scale, entryGap.w * scale, entryGap.h * scale);
+      ctx.clearRect(exitGap.x * scale, exitGap.y * scale, exitGap.w * scale, exitGap.h * scale);
 
-      // Vertical walls
-      ctx.fillRect(80 * scale, 40 * scale, 10 * scale, 280 * scale);
-      ctx.fillRect(160 * scale, 80 * scale, 10 * scale, 240 * scale);
-      ctx.fillRect(240 * scale, 40 * scale, 10 * scale, 280 * scale);
-      ctx.fillRect(320 * scale, 80 * scale, 10 * scale, 240 * scale);
-
-      // Extra blockers
-      ctx.fillRect(120 * scale, 160 * scale, 10 * scale, 80 * scale);
-      ctx.fillRect(200 * scale, 200 * scale, 10 * scale, 80 * scale);
-      ctx.fillRect(280 * scale, 120 * scale, 10 * scale, 80 * scale);
-
-      // Entrance and exit (clear)
-      ctx.clearRect(entranceRect.x, entranceRect.y, entranceRect.w, entranceRect.h);
-      ctx.clearRect(exitRect.x, exitRect.y, exitRect.w, exitRect.h);
+      // draw subtle grid lines (optional) - keep minimal
     }
 
-    // Draw markers and player
+    // Draw markers, trail and player
     function drawMarkersAndPlayer() {
-      // Entrance marker (green circle)
+      // Start marker (green) - outside-ish top-left
       ctx.fillStyle = "#2ecc71";
       ctx.beginPath();
-      ctx.arc(entranceRect.x + entranceRect.w/2, entranceRect.y + entranceRect.h/2, 10 * scale, 0, Math.PI * 2);
+      ctx.arc(startMarker.x, startMarker.y, startMarker.r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Exit marker (red square)
+      // Exit marker (red) - outside-ish bottom-right
       ctx.fillStyle = "#e74c3c";
-      ctx.fillRect(exitRect.x + exitRect.w/2 - 10 * scale, exitRect.y + exitRect.h/2 - 10 * scale, 20 * scale, 20 * scale);
+      ctx.beginPath();
+      ctx.arc(exitMarker.x, exitMarker.y, exitMarker.r, 0, Math.PI * 2);
+      ctx.fill();
 
-      // Player (blue circle) - only draw when playing
+      // Draw trail dots
+      ctx.fillStyle = "rgba(0, 102, 204, 0.9)";
+      for (let i = 0; i < trail.length; i++) {
+        const p = trail[i];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(1, Math.round(player.r / 4)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Player (blue circle) - draw when playing
       if (playing) {
         ctx.fillStyle = "blue";
         ctx.beginPath();
@@ -219,8 +274,8 @@
       drawMarkersAndPlayer();
     }
 
-    // Collision detection: sample small area around center
-    function isTouchingWall(cx, cy, sampleSize = 6) {
+    // Collision detection: sample area around center
+    function isTouchingWall(cx, cy, sampleSize = 8) {
       const half = Math.floor(sampleSize / 2);
       const sx = Math.max(0, Math.floor(cx) - half);
       const sy = Math.max(0, Math.floor(cy) - half);
@@ -241,25 +296,45 @@
 
     // Smoothly move player toward target
     function updatePlayer() {
-      const speed = 0.25; // interpolation factor
+      const speed = 0.22; // interpolation factor
       const prevX = player.x, prevY = player.y;
       player.x += (target.x - player.x) * speed;
       player.y += (target.y - player.y) * speed;
 
-      // accumulate distance traveled as score
+      // add to trail
+      trail.push({ x: player.x, y: player.y });
+      if (trail.length > TRAIL_MAX) trail.shift();
+
+      // accumulate distance as score
       const dx = player.x - prevX;
       const dy = player.y - prevY;
       const dist = Math.sqrt(dx*dx + dy*dy);
       score += dist;
     }
 
-    // Update HUD (timer and score)
+    // Update HUD
     function updateHUD() {
       if (playing && startTime !== null) {
         elapsed = (Date.now() - startTime) / 1000;
       }
       timerEl.textContent = elapsed.toFixed(1) + "s";
       scoreEl.textContent = Math.round(score);
+    }
+
+    // Check if player is inside main maze interior (not outside start/exit zones)
+    function isInsideInterior(px, py) {
+      // interior defined as inside the big inner border (between 60 and 540)
+      return px > 60 * scale && px < 540 * scale && py > 60 * scale && py < 540 * scale;
+    }
+
+    // Check if player is within entry gap (left) or exit gap (right)
+    function inEntryGap(px, py) {
+      return px >= entryGap.x * scale && px <= (entryGap.x + entryGap.w) * scale &&
+             py >= entryGap.y * scale && py <= (entryGap.y + entryGap.h) * scale;
+    }
+    function inExitGap(px, py) {
+      return px >= exitGap.x * scale && px <= (exitGap.x + exitGap.w) * scale &&
+             py >= exitGap.y * scale && py <= (exitGap.y + exitGap.h) * scale;
     }
 
     // Game loop
@@ -272,8 +347,8 @@
       if (playing) {
         updatePlayer();
 
-        // collision check using player's center and radius
-        if (isTouchingWall(player.x, player.y, Math.max(6, Math.round(player.r)))) {
+        // collision check
+        if (isTouchingWall(player.x, player.y, Math.max(8, Math.round(player.r)))) {
           message.textContent = "Oops! You hit a wall. Restart to try again.";
           gameOver = true;
           playing = false;
@@ -285,12 +360,18 @@
           return;
         }
 
-        // check exit
-        if (player.x > exitRect.x && player.x < exitRect.x + exitRect.w &&
-            player.y > exitRect.y && player.y < exitRect.y + exitRect.h) {
+        // Check exit condition: player must have entered interior first, then exit to exitMarker area
+        // We'll require that the player visited interior at least once before allowing finish
+        if (player._visitedInterior && (Math.hypot(player.x - exitMarker.x, player.y - exitMarker.y) <= exitMarker.r + player.r)) {
           updateHUD();
+          // reached exit: redirect
           window.location.href = "address.html";
           return;
+        }
+
+        // If player enters interior, mark visited
+        if (!player._visitedInterior && isInsideInterior(player.x, player.y)) {
+          player._visitedInterior = true;
         }
       }
 
@@ -300,11 +381,6 @@
     }
 
     // Helpers
-    function pointerInEntrance(x, y) {
-      return x >= entranceRect.x && x <= entranceRect.x + entranceRect.w &&
-             y >= entranceRect.y && y <= entranceRect.y + entranceRect.h;
-    }
-
     function clientToCanvas(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       const x = (clientX - rect.left) * (canvas.width / rect.width);
@@ -312,16 +388,22 @@
       return { x, y };
     }
 
-    // Start playing (initialize timer/score)
+    // Start playing only if pointer starts on the start marker (outside)
+    function pointerOnStart(x, y) {
+      return Math.hypot(x - startMarker.x, y - startMarker.y) <= startMarker.r + 6;
+    }
+
     function startPlayingAt(pos) {
       playing = true;
       gameOver = false;
       message.textContent = "";
       restartBtn.hidden = true;
-      player.x = entranceRect.x + entranceRect.w/2;
-      player.y = entranceRect.y + entranceRect.h/2;
+      player.x = startMarker.x;
+      player.y = startMarker.y;
+      player._visitedInterior = false;
       target.x = pos.x;
       target.y = pos.y;
+      trail.length = 0;
       score = 0;
       elapsed = 0;
       startTime = Date.now();
@@ -332,7 +414,7 @@
     canvas.addEventListener("mousedown", (e) => {
       if (gameOver) return;
       const pos = clientToCanvas(e.clientX, e.clientY);
-      if (pointerInEntrance(pos.x, pos.y)) {
+      if (pointerOnStart(pos.x, pos.y)) {
         startPlayingAt(pos);
       }
     });
@@ -344,13 +426,18 @@
       target.y = pos.y;
     });
 
+    window.addEventListener("mouseup", () => {
+      // keep player visible; no special stop
+    });
+
     // Touch events
     canvas.addEventListener("touchstart", (e) => {
       if (gameOver) return;
+      // prevent default only when interacting with canvas
       e.preventDefault();
       const touch = e.touches[0];
       const pos = clientToCanvas(touch.clientX, touch.clientY);
-      if (pointerInEntrance(pos.x, pos.y)) {
+      if (pointerOnStart(pos.x, pos.y)) {
         startPlayingAt(pos);
       }
     }, { passive: false });
@@ -364,17 +451,23 @@
       target.y = pos.y;
     }, { passive: false });
 
+    canvas.addEventListener("touchend", (e) => {
+      // no special action
+    });
+
     // Restart button
     restartBtn.addEventListener("click", () => {
       gameOver = false;
       playing = false;
       message.textContent = "";
       restartBtn.hidden = true;
+      trail.length = 0;
       score = 0;
       elapsed = 0;
       startTime = null;
-      player.x = entranceRect.x + entranceRect.w/2;
-      player.y = entranceRect.y + entranceRect.h/2;
+      player.x = startMarker.x;
+      player.y = startMarker.y;
+      player._visitedInterior = false;
       target.x = player.x;
       target.y = player.y;
       redraw();
@@ -389,9 +482,9 @@
       instructionsEl.style.display = "none";
     });
 
-    // Initial draw and show instructions by default
-    player.x = entranceRect.x + entranceRect.w/2;
-    player.y = entranceRect.y + entranceRect.h/2;
+    // Initial draw
+    player.x = startMarker.x;
+    player.y = startMarker.y;
     target.x = player.x;
     target.y = player.y;
     redraw();
