@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Maze Game — Two Exits</title>
+  <title>Maze Game — Simple</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     :root { --accent:#0b5a8a; --bg:#fff; --wall:#000; --start:#2ecc71; --exit:#e74c3c; --player:#0074d9; }
@@ -70,8 +70,8 @@
   </style>
 </head>
 <body>
-  <h1>Maze Game — Two Exits</h1>
-  <p class="lead">Start at the green marker. Navigate the maze and choose one of the two red exits — only one is correct.</p>
+  <h1>Maze Game — Simple</h1>
+  <p class="lead">Click or touch the green start marker. Navigate to the correct red exit. Only one exit is correct.</p>
 
   <div class="canvas-wrap" id="wrap">
     <canvas id="mazeCanvas"></canvas>
@@ -83,7 +83,7 @@
 
     <div class="instructions" id="instructions" role="dialog" aria-modal="false">
       <strong style="color:#ffd966;display:block;margin-bottom:6px">How to play</strong>
-      <div>Click or touch the <strong style="color:var(--start)">green</strong> start marker. Move through the maze to one of the two <strong style="color:var(--exit)">red</strong> exits. Only one exit is correct — the wrong exit ends the run.</div>
+      <div>Tap the <strong style="color:var(--start)">green</strong> start marker. Move the blue player to one of the two <strong style="color:var(--exit)">red</strong> exits. Only one exit is correct. Touching black walls ends the run.</div>
       <div style="text-align:right;margin-top:8px;">
         <button id="hideInstrBtn" style="background:#2ecc71;color:#fff;border:none;">Got it</button>
       </div>
@@ -120,7 +120,7 @@
     let animId = null;
 
     // Player and target (logical coordinates)
-    const player = { x: 30, y: 30, r: 8 };
+    const player = { x: 30, y: 30, r: 10 }; // slightly larger player for easier navigation
     const target = { x: player.x, y: player.y };
 
     // Timer & score
@@ -129,51 +129,41 @@
     let score = 0;
 
     // Start marker (outside top-left)
-    const startMarker = { x: 30, y: 30, r: 12 };
+    const startMarker = { x: 30, y: 30, r: 14 };
 
-    // Two exits (both red). Only exitA is correct.
-    const exitA = { x: SIZE - 30, y: SIZE - 30, r: 12, correct: true };   // bottom-right (correct)
-    const exitB = { x: 30, y: SIZE - 30, r: 12, correct: false };         // bottom-left (wrong)
+    // Two exits (only one correct)
+    const exitA = { x: SIZE - 30, y: SIZE - 30, r: 14, correct: true };   // bottom-right (correct)
+    const exitB = { x: 30, y: SIZE - 30, r: 14, correct: false };         // bottom-left (wrong)
 
-    // Maze walls (logical coordinates)
+    // Simpler maze: wider corridors, fewer obstacles, thicker gaps
+    // Walls are rectangles in logical coordinates
     const walls = [
       // outer border
-      { x: 0, y: 0, w: SIZE, h: 12 },
-      { x: 0, y: 0, w: 12, h: SIZE },
-      { x: SIZE - 12, y: 0, w: 12, h: SIZE },
-      { x: 0, y: SIZE - 12, w: SIZE, h: 12 },
+      { x: 0, y: 0, w: SIZE, h: 14 },
+      { x: 0, y: 0, w: 14, h: SIZE },
+      { x: SIZE - 14, y: 0, w: 14, h: SIZE },
+      { x: 0, y: SIZE - 14, w: SIZE, h: 14 },
 
-      // inner frame
-      { x: 60, y: 60, w: 380, h: 12 },
-      { x: 60, y: 60, w: 12, h: 380 },
-      { x: 428, y: 60, w: 12, h: 380 },
-      { x: 60, y: 428, w: 380, h: 12 },
+      // big inner frame (wide corridors)
+      { x: 70, y: 70, w: 360, h: 14 },
+      { x: 70, y: 70, w: 14, h: 360 },
+      { x: 416, y: 70, w: 14, h: 360 },
+      { x: 70, y: 416, w: 360, h: 14 },
 
-      // corridors
-      { x: 120, y: 120, w: 260, h: 12 },
-      { x: 120, y: 120, w: 12, h: 260 },
-      { x: 368, y: 120, w: 12, h: 260 },
-      { x: 120, y: 368, w: 260, h: 12 },
+      // a couple of gentle corridors (kept wide)
+      { x: 120, y: 120, w: 260, h: 14 },
+      { x: 120, y: 120, w: 14, h: 260 },
+      { x: 366, y: 120, w: 14, h: 260 },
+      { x: 120, y: 366, w: 260, h: 14 },
 
-      // cross passages
-      { x: 180, y: 120, w: 12, h: 120 },
-      { x: 240, y: 180, w: 120, h: 12 },
-      { x: 300, y: 240, w: 12, h: 120 },
-      { x: 180, y: 300, w: 120, h: 12 },
-
-      // small obstacles
-      { x: 150, y: 60, w: 12, h: 60 },
-      { x: 360, y: 360, w: 12, h: 60 },
-      { x: 220, y: 300, w: 60, h: 12 },
-      { x: 300, y: 180, w: 12, h: 60 },
-
-      // center island
-      { x: 240, y: 240, w: 20, h: 20 },
+      // only two small blockers to create a choice, but wide spacing
+      { x: 200, y: 120, w: 14, h: 80 },
+      { x: 300, y: 300, w: 14, h: 80 },
     ];
 
     // Gaps for entry and exits (logical)
-    const entryGap = { x: 12, y: 210, w: 48, h: 80 };   // left gap into interior
-    const exitGap  = { x: SIZE - 60, y: 210, w: 48, h: 80 }; // right gap out
+    const entryGap = { x: 14, y: 200, w: 80, h: 100 };   // left gap into interior (wider)
+    const exitGap  = { x: SIZE - 94, y: 200, w: 80, h: 100 }; // right gap out (wider)
 
     // Resize canvas to fit wrapper width and keep square aspect ratio
     function resizeCanvas() {
@@ -199,7 +189,7 @@
         ctx.fillRect(w.x, w.y, w.w, w.h);
       }
 
-      // carve gaps
+      // carve gaps (wider)
       ctx.clearRect(entryGap.x, entryGap.y, entryGap.w, entryGap.h);
       ctx.clearRect(exitGap.x, exitGap.y, exitGap.w, exitGap.h);
     }
@@ -238,8 +228,11 @@
       drawMarkersAndPlayer();
     }
 
-    // Collision detection: sample small area around center (logical units)
-    function isTouchingWall(cx, cy, sampleSize = 8) {
+    // Forgiving collision detection:
+    // sample a small square around center and only treat as collision when
+    // a significant fraction of sampled pixels are black.
+    function isTouchingWallForgiving(cx, cy, sampleSize = 6, threshold = 0.35) {
+      // sampleSize in logical units; threshold is fraction of black pixels required to count as collision
       const half = Math.floor(sampleSize / 2);
       const backingScale = canvas.width / SIZE;
       const sx = Math.max(0, Math.floor((cx - half) * backingScale));
@@ -250,11 +243,16 @@
       try {
         // getImageData in logical coords by dividing by backingScale
         const data = ctx.getImageData(sx / backingScale, sy / backingScale, w / backingScale, h / backingScale).data;
+        let black = 0;
+        let total = data.length / 4;
         for (let i = 0; i < data.length; i += 4) {
           const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
-          if (r === 0 && g === 0 && b === 0 && a !== 0) return true;
+          if (r === 0 && g === 0 && b === 0 && a !== 0) black++;
         }
+        // if black fraction exceeds threshold, count as collision
+        return (black / total) >= threshold;
       } catch (err) {
+        // fallback: single pixel check (very forgiving)
         try {
           const px = ctx.getImageData(Math.max(0, Math.floor(cx)), Math.max(0, Math.floor(cy)), 1, 1).data;
           return px[0] === 0 && px[1] === 0 && px[2] === 0;
@@ -262,12 +260,11 @@
           return false;
         }
       }
-      return false;
     }
 
     // Smoothly move player toward target (logical coords)
     function updatePlayer() {
-      const speed = 0.22;
+      const speed = 0.28; // slightly faster for responsiveness
       const prevX = player.x, prevY = player.y;
       player.x += (target.x - player.x) * speed;
       player.y += (target.y - player.y) * speed;
@@ -295,7 +292,7 @@
     }
 
     function pointerOnStart(x, y) {
-      return Math.hypot(x - startMarker.x, y - startMarker.y) <= startMarker.r + 6;
+      return Math.hypot(x - startMarker.x, y - startMarker.y) <= startMarker.r + 8;
     }
 
     function reachedExit(exit) {
@@ -327,8 +324,8 @@
       if (playing) {
         updatePlayer();
 
-        // collision check
-        if (isTouchingWall(player.x, player.y, Math.max(8, Math.round(player.r)))) {
+        // forgiving collision check
+        if (isTouchingWallForgiving(player.x, player.y, 8, 0.40)) {
           messageEl.textContent = 'Oops! You hit a wall. Restart to try again.';
           gameOver = true;
           playing = false;
